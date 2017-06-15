@@ -78,6 +78,47 @@ def best_M(pts2d, pts3d, calibpts, testpts, iter):
             M = M_tmp
     return M, res
 
+def least_squares_F_solver(a_pts, b_pts):
+    num_pts = a_pts.shape[0]
+    ua = a_pts[:,0]
+    va = a_pts[:,1]
+    ub = b_pts[:,0]
+    vb = b_pts[:,1]
+    ones = np.ones(num_pts)
+    A = np.column_stack((ua*ub, va*ub, ub, ua*vb, va*vb, vb, ua, va))
+    b = -np.ones(num_pts)
+    F = np.linalg.lstsq(A, b)[0]
+    F = np.append(F, 1)
+    F = F.reshape((3,3))
+    return F
+
+def fun_mat_rank2(F):
+    U,S,V = np.linalg.svd(F)
+    S[-1] = 0
+    S = np.diag(S)
+    F = np.dot(np.dot(U,S), V)
+    return F
+
+def draw_eplines(img_a,img_b,F,a_pts,b_pts): #Find and draw epipolar lines
+    lines_a = np.dot(F.T, b_pts.T).T
+    lines_b = np.dot(F, a_pts.T).T
+    n, m, _ = img_a.shape
+    line_L = np.cross([0,0,1],[n,0,1])
+    line_R = np.cross([0,m,1],[n,m,1])
+
+    for line_a, line_b in zip(lines_a, lines_b):
+        P_a_L = np.cross(line_a, line_L)
+        P_a_R = np.cross(line_a, line_R)
+        P_a_L = (P_a_L[:2] / P_a_R[2]).astype(int)
+        P_a_R = (P_a_R[:2] / P_a_R[2]).astype(int)
+        cv2.line(img_a, tuple(P_a_L[:2]), tuple(P_a_R[:2]), (0,255,0), thickness=2)
+        P_b_L = np.cross(line_b, line_L)
+        P_b_R = np.cross(line_b, line_R)
+        P_b_L = (P_b_L[:2] / P_b_R[2]).astype(int)
+        P_b_R = (P_b_R[:2] / P_b_R[2]).astype(int)
+        cv2.line(img_b, tuple(P_b_L[:2]), tuple(P_b_R[:2]), (0,255,0), thickness=2)
+    return img_a,img_b
+
 def task_1(): #Estimating Camera Projection Matrix
     print("Executing task: 1 \n==================")
     pts2d_norm = load_file('resources/pts2d-norm-pic_a.txt')
@@ -120,10 +161,81 @@ def task_1(): #Estimating Camera Projection Matrix
     m4 = M[:, 3]
     C = np.dot(-np.linalg.inv(Q), m4)
     print('Center of Camera = %s\n'%C)
+    print("Task 1 executed successfully\n")
 
 
 def task_2(): #Estimating fundamental matrix
     print("Executing task: 2 \n==================")
+    #reading input images
+    print("Fundamental Matrix and epipolar lines using Method-1")
+    img_a = cv2.imread('resources/pic_a.jpg', cv2.IMREAD_COLOR)
+    img_b = cv2.imread('resources/pic_b.jpg', cv2.IMREAD_COLOR)
+    #Reading image points
+    a_pts = np.array(load_file('resources/pts2d-pic_a.txt'))
+    b_pts = np.array(load_file('resources/pts2d-pic_b.txt'))
+
+    F = least_squares_F_solver(a_pts, b_pts)
+    print('Fundametal Matrix with Rank = 3: \n%s\n'%F)
+
+    F = fun_mat_rank2(F=F)
+    print('Fundametal Matrix with Rank = 2: \n%s\n'%F)
+
+    a_pts = np.column_stack((a_pts, np.ones(a_pts.shape[0])))
+    b_pts = np.column_stack((b_pts, np.ones(a_pts.shape[0])))
+
+    img_a, img_b = draw_eplines(img_a=img_a, img_b=img_b, F=F, a_pts=a_pts, b_pts=b_pts)
+    cv2.imshow('Right View - M1', img_a);
+    cv2.imshow('Left View - M1', img_b); 
+    cv2.waitKey(0); 
+    cv2.destroyAllWindows();
+    cv2.imwrite('output/pic_a_M1.png',img_a)
+    cv2.imwrite('output/pic_b_M1.png',img_b)
+
+
+    print("Fundamental Matrix and epipolar lines using Method-2(Better fundamental matrix)")
+    a_pts = np.array(load_file('resources/pts2d-pic_a.txt'))
+    b_pts = np.array(load_file('resources/pts2d-pic_b.txt'))
+    #Normalization Matrices
+    m_a = np.mean(a_pts, axis=0)
+    m_b = np.mean(b_pts, axis=0)
+    a_pts_temp = np.subtract(a_pts, m_a[None,:])
+    b_pts_temp = np.subtract(b_pts, m_b[None,:])
+    s_a = 1 / np.abs(np.std(a_pts_temp, axis=0)).max()
+    s_b = 1 / np.abs(np.std(b_pts_temp, axis=0)).max()
+    S_a = np.diag([s_a, s_a, 1])
+    S_b = np.diag([s_b, s_b, 1])
+    C_a = np.array([[1, 0, -m_a[0]],[0, 1, -m_a[1]],[0, 0, 1]])
+    C_b = np.array([[1, 0, -m_b[0]],[0, 1, -m_b[1]],[0, 0, 1]])
+    T_a = np.dot(S_a, C_a)
+    T_b = np.dot(S_b, C_b)
+
+    #Homogenous Co-ordinates
+    a_pts = np.column_stack((a_pts_temp, np.ones(a_pts.shape[0])))
+    b_pts = np.column_stack((b_pts_temp, np.ones(b_pts.shape[0])))
+    #Normzalized
+    a_pts_norm = np.dot(a_pts, T_a)
+    b_pts_norm = np.dot(b_pts, T_b)
+    F = least_squares_F_solver(a_pts_norm, b_pts_norm)#Fundamental Matrix
+    F = fun_mat_rank2(F=F)#Getting F to rank-2
+
+    print('Ta=\n%s\n'%T_a)
+    print('Tb=\n%s\n'%T_b)
+    print('F=\n%s\n'%F)
+    #Reading the images again
+    img_a = cv2.imread('resources/pic_a.jpg', cv2.IMREAD_COLOR)
+    img_b = cv2.imread('resources/pic_b.jpg', cv2.IMREAD_COLOR)
+
+    F = np.dot(T_b.T, np.dot(F, T_a)) #Finer fundamental matrix
+    img_a, img_b = draw_eplines(img_a=img_a, img_b=img_b, F=F, a_pts=a_pts, b_pts=b_pts)
+
+    cv2.imshow('Right View - M2', img_a);
+    cv2.imshow('Left View - M2', img_b); 
+    cv2.waitKey(0); 
+    cv2.destroyAllWindows();
+    cv2.imwrite('output/pic_a_M2.png',img_a)
+    cv2.imwrite('output/pic_b_M2.png',img_b)
+
+    print("Task 2 executed successfully")
 
 if __name__ == '__main__':
     tasks = dict({"1":task_1,"2":task_2});
@@ -131,7 +243,8 @@ if __name__ == '__main__':
     print("1: Estimate Camera Projection Matrix \n2: Estimate fundamental matrix and draw epipolar line \nTo execute both tasks type 0")
     sel = input("==> ")
     if sel == "0":
-        print("hello")
+        tasks["1"]()
+        tasks["2"]()
     else:
         try:
             print('Initializing task:',sel,'\n==================')
