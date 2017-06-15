@@ -80,8 +80,8 @@ def best_M(pts2d, pts3d, calibpts, testpts, iter):
 
 def task_1(): #Estimating Camera Projection Matrix
     print("Executing task: 1 \n==================")
-    pts2d_norm = load_file('input/pts2d-norm-pic_a.txt')
-    pts3d_norm = load_file("input/pts3d-norm.txt")
+    pts2d_norm = load_file('resources/pts2d-norm-pic_a.txt')
+    pts3d_norm = load_file("resources/pts3d-norm.txt")
     M, res = least_squares_M_solver(pts2d_norm, pts3d_norm) #Finding M-Project matrix using LS method
     pts2d_proj = np.dot(M, np.append(pts3d_norm[-1],1))
     pts2d_proj = pts2d_proj[:2] / pts2d_proj[2]
@@ -101,8 +101,8 @@ def task_1(): #Estimating Camera Projection Matrix
     print("Residual: %.4f\n"%res)
 
     #Finding the best the best projection matrix using varying residuals
-    pts2d = load_file('input/pts2d-pic_a.txt')
-    pts3d = load_file("input/pts3d.txt")
+    pts2d = load_file('resources/pts2d-pic_a.txt')
+    pts3d = load_file("resources/pts3d.txt")
 
     M_8, res_8 = best_M(pts2d, pts3d, calibpts=8, testpts=4, iter=10)
     M_12, res_12 = best_M(pts2d, pts3d, calibpts=12,testpts=4, iter=10)
